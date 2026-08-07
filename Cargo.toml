@@ -1,0 +1,46 @@
+[package]
+name = "a2a-mesh"
+version = "0.1.0"
+edition = "2021"
+description = "A Rust MCP server for agent-to-agent messaging over A2A"
+license = "Apache-2.0"
+repository = "https://github.com/tgockel/a2a-mesh"
+
+[[bin]]
+name = "a2a-mesh"
+path = "src/main.rs"
+
+# Dependency pins and roles are specified in DESIGN.md §2.1.
+#
+# The `-lf` A2A crates are pre-1.0: a minor bump is a breaking change, so the
+# pins are held deliberately until raised.
+[dependencies]
+# MCP server, task_manager, tool macros.
+rmcp = { version = "3", features = ["server", "macros", "schemars", "transport-io"] }
+
+# A2A core types, client (binding negotiation), and axum-based server.
+a2a-lf = "0.3"
+a2a-client-lf = "0.2"
+a2a-server-lf = "0.4"
+
+# etcd v3 client plus CacheClient / LeasePool helpers.
+etcdrs = "0.1"
+etcdrs-util = { version = "0.1", features = ["cache", "lease-pool"] }
+
+# Runtime and HTTP stack shared with a2a-server-lf.
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+
+# Serialization.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Errors.
+thiserror = "2"
+
+# Logs. stdout carries MCP stdio traffic, so logs go to stderr (DESIGN.md §10).
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Identifiers. The etcd key is a process-unique UUID (DESIGN.md §4.1).
+uuid = { version = "1", features = ["v4"] }
