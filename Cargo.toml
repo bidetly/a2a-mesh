@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "A Rust MCP server for agent-to-agent messaging over A2A"
 license = "Apache-2.0"
-repository = "https://github.com/tgockel/a2a-mesh"
+repository = "https://github.com/bidetly/a2a-mesh"
 
 [[bin]]
 name = "a2a-mesh"
