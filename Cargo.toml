@@ -19,9 +19,11 @@ path = "src/main.rs"
 rmcp = { version = "3", features = ["server", "macros", "schemars", "transport-io"] }
 
 # A2A core types, client (binding negotiation), and axum-based server.
-a2a-lf = "0.3"
-a2a-client-lf = "0.2"
-a2a-server-lf = "0.4"
+# These A2A crates are a coordinated compatibility surface. Pin them exactly
+# until their versions have been reviewed together against the A2A protocol.
+a2a-lf = "=0.3.0"
+a2a-client-lf = "=0.2.1"
+a2a-server-lf = "=0.4.1"
 
 # etcd v3 client plus CacheClient / LeasePool helpers.
 etcdrs = "0.1"

@@ -8,6 +8,11 @@ use std::time::Duration;
 use crate::identity::Handle;
 
 /// The error type for mesh operations.
+///
+/// This planned public error surface is defined before its command wiring;
+/// retain it while the scaffold is completed rather than adding artificial
+/// call sites solely to satisfy a lint.
+#[expect(dead_code, reason = "command wiring has not been implemented yet")]
 #[derive(Debug, thiserror::Error)]
 pub enum MeshError {
     /// This instance has not announced itself, so it has no identity and no

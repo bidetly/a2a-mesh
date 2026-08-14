@@ -10,6 +10,10 @@
 //! through re-announcing does not orphan a key (DESIGN.md §4.1).
 
 /// A mesh handle, `local@host`.
+///
+/// The planned identity type precedes the announcement/discovery wiring, so
+/// it intentionally has no construction site in this scaffold yet.
+#[expect(dead_code, reason = "announcement and discovery wiring is pending")]
 #[derive(Debug, Clone)]
 pub struct Handle {
     pub local: String,
