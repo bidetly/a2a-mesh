@@ -23,5 +23,9 @@ mod tools;
 fn main() {
     // Logs go to stderr — stdout carries MCP stdio traffic and writing to it
     // corrupts the protocol stream (DESIGN.md §10).
-    todo!("config, wiring, tokio setup")
+    let _config = a2a_mesh::config::Config::load().unwrap_or_else(|error| {
+        eprintln!("configuration error: {error}");
+        std::process::exit(2);
+    });
+    todo!("wiring and tokio setup")
 }

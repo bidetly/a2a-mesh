@@ -1,5 +1,6 @@
 //! Public types and contracts for a2a-mesh.
 
+pub mod config;
 pub mod dto;
 
 pub use dto::{
