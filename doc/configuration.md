@@ -1,6 +1,6 @@
 # Configuration
 
-`a2a-mesh` builds one typed configuration before it starts listeners or background tasks. It intentionally contains **no credentials, TLS policy, authentication tokens, or remote-plaintext-etcd opt-in**; those belong to the security layer.
+`a2a-mesh` builds one typed configuration before it starts listeners or background tasks. It contains listener and etcd security policy, but never certificate keys, credentials, or authentication tokens.
 
 ## Sources and precedence
 
@@ -19,6 +19,10 @@ An absent configuration file selector does not cause a file to be read. A select
 | `etcd.endpoints` | `A2A_MESH_ETCD_ENDPOINTS` | `--etcd-endpoints` | `http://127.0.0.1:2379` | one or more absolute `http`/`https` URLs with hosts and no URL credentials; environment/CLI use comma-separated endpoints |
 | `listen.address` | `A2A_MESH_LISTEN_ADDRESS` | `--listen-address` | `127.0.0.1` | IP address |
 | `listen.advertised_host` | `A2A_MESH_ADVERTISED_HOST` | `--advertised-host` | unset | non-blank DNS name or IP address, with no control characters |
+| `security.a2a_tls` | `A2A_MESH_A2A_TLS` | `--a2a-tls` | false on loopback | boolean; required to be `true` for non-loopback or wildcard A2A binds |
+| `security.present_client_certificate` | `A2A_MESH_PRESENT_CLIENT_CERTIFICATE` | `--present-client-certificate` | true | boolean; generated identity is presented outbound when enabled |
+| `security.certificate_lifetime_secs` | `A2A_MESH_CERTIFICATE_LIFETIME_SECS` | `--certificate-lifetime-secs` | 31622400 | seconds; positive, no more than 10 years; certificate expiration is this lifetime plus a five-minute clock-skew margin |
+| `security.allow_insecure_etcd` | `A2A_MESH_ALLOW_INSECURE_ETCD` | `--allow-insecure-etcd` | false | boolean; explicit opt-in required for non-loopback plaintext etcd and emits one startup warning |
 | `limits.inbound_capacity` | `A2A_MESH_INBOUND_CAPACITY` | `--inbound-capacity` | 64 | tasks; positive integer |
 | `limits.inbound_deadline_secs` | `A2A_MESH_INBOUND_DEADLINE_SECS` | `--inbound-deadline-secs` | 900 | seconds (15 minutes); positive integer, at most 365 days |
 | `limits.max_outbound_tracking_secs` | `A2A_MESH_MAX_OUTBOUND_TRACKING_SECS` | `--max-outbound-tracking-secs` | 86400 | seconds (24 hours); positive integer, at most 365 days |
@@ -34,11 +38,16 @@ A malformed number, address, TOML document, empty endpoint list, zero resource/d
 
 ```toml
 [etcd]
-endpoints = ["http://etcd-a:2379", "http://etcd-b:2379"]
+endpoints = ["https://etcd-a:2379", "https://etcd-b:2379"]
 
 [listen]
 address = "0.0.0.0"
 advertised_host = "mesh-worker.internal"
+
+[security]
+a2a_tls = true
+present_client_certificate = true
+certificate_lifetime_secs = 31622400
 
 [limits]
 inbound_capacity = 128
@@ -57,3 +66,5 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo build --locked
 cargo test --locked
 ```
+
+See [security.md](security.md) for the TLS identity, fingerprint, pinning, non-mesh trust, certificate lifetime, etcd, and safe-secret-handling model.

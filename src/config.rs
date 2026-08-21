@@ -11,13 +11,24 @@ use thiserror::Error;
 const MIB: u64 = 1024 * 1024;
 const KIB: u64 = 1024;
 const MAX_DURATION_SECS: u64 = 365 * 24 * 60 * 60;
+const DEFAULT_CERTIFICATE_LIFETIME_SECS: u64 = 366 * 24 * 60 * 60;
+const MAX_CERTIFICATE_LIFETIME_SECS: u64 = 10 * 366 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub etcd_endpoints: Vec<String>,
     pub listen_address: IpAddr,
     pub advertised_host: Option<String>,
+    pub security: SecurityConfig,
     pub limits: Limits,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecurityConfig {
+    pub a2a_tls: bool,
+    pub present_client_certificate: bool,
+    pub allow_insecure_etcd: bool,
+    pub certificate_lifetime: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +72,12 @@ impl Default for Config {
             etcd_endpoints: vec!["http://127.0.0.1:2379".into()],
             listen_address: "127.0.0.1".parse().expect("valid default address"),
             advertised_host: None,
+            security: SecurityConfig {
+                a2a_tls: false,
+                present_client_certificate: true,
+                allow_insecure_etcd: false,
+                certificate_lifetime: Duration::from_secs(DEFAULT_CERTIFICATE_LIFETIME_SECS),
+            },
             limits: Limits {
                 inbound_capacity: 64,
                 inbound_deadline: Duration::from_secs(15 * 60),
@@ -80,6 +97,7 @@ impl Default for Config {
 struct FileConfig {
     etcd: Option<FileEtcd>,
     listen: Option<FileListen>,
+    security: Option<FileSecurity>,
     limits: Option<FileLimits>,
 }
 #[derive(Debug, Default, Deserialize)]
@@ -92,6 +110,14 @@ struct FileEtcd {
 struct FileListen {
     address: Option<String>,
     advertised_host: Option<String>,
+}
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileSecurity {
+    a2a_tls: Option<bool>,
+    present_client_certificate: Option<bool>,
+    allow_insecure_etcd: Option<bool>,
+    certificate_lifetime_secs: Option<u64>,
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -155,6 +181,20 @@ impl Config {
                 self.advertised_host = Some(v);
             }
         }
+        if let Some(v) = file.security {
+            if let Some(x) = v.a2a_tls {
+                self.security.a2a_tls = x;
+            }
+            if let Some(x) = v.present_client_certificate {
+                self.security.present_client_certificate = x;
+            }
+            if let Some(x) = v.allow_insecure_etcd {
+                self.security.allow_insecure_etcd = x;
+            }
+            if let Some(x) = v.certificate_lifetime_secs {
+                self.security.certificate_lifetime = Duration::from_secs(x);
+            }
+        }
         if let Some(v) = file.limits {
             self.apply_limits(v);
         }
@@ -195,6 +235,20 @@ impl Config {
         }
         if let Some(v) = lookup(env, "A2A_MESH_ADVERTISED_HOST") {
             self.advertised_host = Some(v.to_owned());
+        }
+        if let Some(v) = lookup(env, "A2A_MESH_A2A_TLS") {
+            self.security.a2a_tls = parse_bool(v, "security.a2a_tls")?;
+        }
+        if let Some(v) = lookup(env, "A2A_MESH_PRESENT_CLIENT_CERTIFICATE") {
+            self.security.present_client_certificate =
+                parse_bool(v, "security.present_client_certificate")?;
+        }
+        if let Some(v) = lookup(env, "A2A_MESH_ALLOW_INSECURE_ETCD") {
+            self.security.allow_insecure_etcd = parse_bool(v, "security.allow_insecure_etcd")?;
+        }
+        if let Some(v) = lookup(env, "A2A_MESH_CERTIFICATE_LIFETIME_SECS") {
+            self.security.certificate_lifetime =
+                Duration::from_secs(parse(v, "security.certificate_lifetime_secs")?);
         }
         macro_rules! limit {
             ($env:literal, $field:literal, $target:ident) => {
@@ -260,6 +314,19 @@ impl Config {
                 "--etcd-endpoints" => self.etcd_endpoints = csv("etcd.endpoints", value)?,
                 "--listen-address" => self.listen_address = parse_ip("listen.address", value)?,
                 "--advertised-host" => self.advertised_host = Some(value.clone()),
+                "--a2a-tls" => self.security.a2a_tls = parse_bool(value, "security.a2a_tls")?,
+                "--present-client-certificate" => {
+                    self.security.present_client_certificate =
+                        parse_bool(value, "security.present_client_certificate")?
+                }
+                "--allow-insecure-etcd" => {
+                    self.security.allow_insecure_etcd =
+                        parse_bool(value, "security.allow_insecure_etcd")?
+                }
+                "--certificate-lifetime-secs" => {
+                    self.security.certificate_lifetime =
+                        Duration::from_secs(parse(value, "security.certificate_lifetime_secs")?)
+                }
                 "--inbound-capacity" => {
                     self.limits.inbound_capacity = parse(value, "limits.inbound_capacity")?
                 }
@@ -294,8 +361,30 @@ impl Config {
         }
         Ok(())
     }
+    /// Whether startup must warn because remote plaintext etcd was explicitly accepted.
+    pub fn has_insecure_remote_etcd_endpoint(&self) -> bool {
+        self.security.allow_insecure_etcd
+            && self.etcd_endpoints.iter().any(|endpoint| {
+                url::Url::parse(endpoint).is_ok_and(|parsed| {
+                    parsed.scheme() == "http" && !is_loopback_host(parsed.host())
+                })
+            })
+    }
+
     /// Validate a configuration after programmatic construction or mutation.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.listen_address.is_unspecified() && self.advertised_host.is_none() {
+            return invalid(
+                "listen.advertised_host",
+                "is required when listen.address is a wildcard bind",
+            );
+        }
+        if !self.listen_address.is_loopback() && !self.security.a2a_tls {
+            return invalid(
+                "security.a2a_tls",
+                "pinned TLS is required for non-loopback and wildcard A2A binds",
+            );
+        }
         if self.etcd_endpoints.is_empty() || self.etcd_endpoints.iter().any(|e| e.trim().is_empty())
         {
             return invalid(
@@ -311,6 +400,14 @@ impl Config {
             if value == 0 {
                 return invalid(field, "must be greater than zero");
             }
+        }
+        if self.security.certificate_lifetime.is_zero()
+            || self.security.certificate_lifetime.as_secs() > MAX_CERTIFICATE_LIFETIME_SECS
+        {
+            return invalid(
+                "security.certificate_lifetime_secs",
+                "must be greater than zero and no more than 10 years",
+            );
         }
         for (field, value) in [
             (
@@ -339,6 +436,14 @@ impl Config {
             return invalid(
                 "limits.total_blob_bytes",
                 "exceeds this platform's addressable memory",
+            );
+        }
+        if self.security.certificate_lifetime.is_zero()
+            || self.security.certificate_lifetime.as_secs() > MAX_CERTIFICATE_LIFETIME_SECS
+        {
+            return invalid(
+                "security.certificate_lifetime_secs",
+                "must be greater than zero and no more than 10 years",
             );
         }
         for (field, value) in [
@@ -374,7 +479,7 @@ impl Config {
         for endpoint in &self.etcd_endpoints {
             let parsed = url::Url::parse(endpoint).map_err(|_| ConfigError::Invalid {
                 field: "etcd.endpoints",
-                message: format!("expected an absolute http(s) URL, got {endpoint:?}"),
+                message: "expected an absolute http(s) URL with a host".to_owned(),
             })?;
             if !matches!(parsed.scheme(), "http" | "https") || parsed.host().is_none() {
                 return invalid(
@@ -386,6 +491,15 @@ impl Config {
                 return invalid(
                     "etcd.endpoints",
                     "endpoint URLs must not contain credentials",
+                );
+            }
+            if parsed.scheme() == "http"
+                && !is_loopback_host(parsed.host())
+                && !self.security.allow_insecure_etcd
+            {
+                return invalid(
+                    "etcd.endpoints",
+                    "plaintext non-loopback etcd endpoints require security.allow_insecure_etcd",
                 );
             }
         }
@@ -403,6 +517,17 @@ fn lookup<'a>(env: &'a [(String, String)], name: &str) -> Option<&'a str> {
         .rev()
         .find(|(k, _)| k == name)
         .map(|(_, v)| v.as_str())
+}
+fn parse_bool(value: &str, field: &'static str) -> Result<bool, ConfigError> {
+    value.parse().map_err(|_| ConfigError::Invalid {
+        field,
+        message: format!("expected true or false, got {value:?}"),
+    })
+}
+fn is_loopback_host(host: Option<url::Host<&str>>) -> bool {
+    matches!(host, Some(url::Host::Ipv4(ip)) if ip.is_loopback())
+        || matches!(host, Some(url::Host::Ipv6(ip)) if ip.is_loopback())
+        || matches!(host, Some(url::Host::Domain("localhost")))
 }
 fn parse<T: std::str::FromStr>(value: &str, field: &'static str) -> Result<T, ConfigError> {
     value.parse().map_err(|_| ConfigError::Invalid {
@@ -469,6 +594,12 @@ mod tests {
     fn defaults_are_balanced() {
         let c = Config::load_from(["mesh"], &[]).unwrap();
         assert_eq!(c.limits.inbound_capacity, 64);
+        assert!(c.security.present_client_certificate);
+        assert!(!c.security.a2a_tls);
+        assert_eq!(
+            c.security.certificate_lifetime.as_secs(),
+            DEFAULT_CERTIFICATE_LIFETIME_SECS
+        );
         assert_eq!(c.limits.inbound_deadline, Duration::from_secs(900));
         assert_eq!(c.limits.total_blob_bytes, 512 * MIB);
         assert_eq!(c.limits.inline_content_threshold, 256 * KIB);
@@ -479,7 +610,7 @@ mod tests {
             ["mesh"],
             &env(&[
                 ("A2A_MESH_INBOUND_CAPACITY", "7"),
-                ("A2A_MESH_ETCD_ENDPOINTS", "http://a,http://b"),
+                ("A2A_MESH_ETCD_ENDPOINTS", "https://a,https://b"),
             ]),
         )
         .unwrap();
@@ -498,6 +629,36 @@ mod tests {
         .unwrap();
         std::fs::remove_file(path).unwrap();
         assert_eq!(config.limits.inbound_capacity, 9);
+    }
+    #[test]
+    fn security_sources_follow_file_environment_cli_precedence() {
+        let path = std::env::temp_dir().join(format!("a2a-mesh-security-{}", std::process::id()));
+        std::fs::write(&path, "[security]\na2a_tls = true\npresent_client_certificate = false\ncertificate_lifetime_secs = 60\n").unwrap();
+        let path_text = path.to_string_lossy().into_owned();
+        let config = Config::load_from(
+            [
+                "mesh",
+                "--config",
+                &path_text,
+                "--present-client-certificate",
+                "true",
+                "--certificate-lifetime-secs",
+                "180",
+            ],
+            &env(&[
+                ("A2A_MESH_A2A_TLS", "false"),
+                ("A2A_MESH_PRESENT_CLIENT_CERTIFICATE", "false"),
+                ("A2A_MESH_CERTIFICATE_LIFETIME_SECS", "120"),
+            ]),
+        );
+        std::fs::remove_file(path).unwrap();
+        let config = config.unwrap();
+        assert!(!config.security.a2a_tls);
+        assert!(config.security.present_client_certificate);
+        assert_eq!(
+            config.security.certificate_lifetime,
+            Duration::from_secs(180)
+        );
     }
     #[test]
     fn cli_overrides_environment() {
@@ -602,6 +763,70 @@ mod tests {
         assert!(error
             .to_string()
             .contains("limits.inline_content_threshold"));
+    }
+    #[test]
+    fn enforces_network_tls_and_etcd_plaintext_policy() {
+        assert!(Config::load_from(["mesh", "--listen-address", "0.0.0.0"], &[]).is_err());
+        assert!(Config::load_from(
+            ["mesh", "--listen-address", "0.0.0.0", "--a2a-tls", "true"],
+            &[]
+        )
+        .is_err());
+        assert!(Config::load_from(
+            [
+                "mesh",
+                "--listen-address",
+                "0.0.0.0",
+                "--a2a-tls",
+                "true",
+                "--advertised-host",
+                "mesh.example.test"
+            ],
+            &[]
+        )
+        .is_ok());
+        assert!(Config::load_from(
+            ["mesh", "--etcd-endpoints", "http://etcd.example:2379"],
+            &[]
+        )
+        .is_err());
+        let configured_lifetime =
+            Config::load_from(["mesh", "--certificate-lifetime-secs", "60"], &[]).unwrap();
+        assert_eq!(
+            configured_lifetime.security.certificate_lifetime,
+            Duration::from_secs(60)
+        );
+        assert!(Config::load_from(["mesh", "--certificate-lifetime-secs", "0"], &[]).is_err());
+        let remote = Config::load_from(
+            [
+                "mesh",
+                "--etcd-endpoints",
+                "HTTP://etcd.example:2379",
+                "--allow-insecure-etcd",
+                "true",
+            ],
+            &[],
+        )
+        .unwrap();
+        assert!(remote.has_insecure_remote_etcd_endpoint());
+        let local = Config::load_from(
+            [
+                "mesh",
+                "--etcd-endpoints",
+                "http://127.0.0.1:2379",
+                "--allow-insecure-etcd",
+                "true",
+            ],
+            &[],
+        )
+        .unwrap();
+        assert!(!local.has_insecure_remote_etcd_endpoint());
+        let error = Config::load_from(
+            ["mesh", "--etcd-endpoints", "http://user:sentinel-secret@"],
+            &[],
+        )
+        .unwrap_err();
+        assert!(!error.to_string().contains("sentinel-secret"));
     }
     #[test]
     fn rejects_unknown_options_so_secrets_are_not_silently_accepted() {

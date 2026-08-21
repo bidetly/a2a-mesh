@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod dto;
+pub mod security;
 
 pub use dto::{
     ArtifactDescriptor, ContentKind, ContentPart, DiscoveryHealth, DiscoverySnapshot, HandleClaim,

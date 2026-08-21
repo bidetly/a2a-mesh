@@ -23,9 +23,22 @@ mod tools;
 fn main() {
     // Logs go to stderr — stdout carries MCP stdio traffic and writing to it
     // corrupts the protocol stream (DESIGN.md §10).
-    let _config = a2a_mesh::config::Config::load().unwrap_or_else(|error| {
+    let config = a2a_mesh::config::Config::load().unwrap_or_else(|error| {
         eprintln!("configuration error: {error}");
         std::process::exit(2);
     });
+    let advertised_name =
+        a2a_mesh::security::advertised_name(&config).expect("bind IP supplies an advertised name");
+    let _identity = a2a_mesh::security::SecurityIdentity::generate(
+        &advertised_name,
+        config.security.certificate_lifetime,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("security initialization error: {error}");
+        std::process::exit(2);
+    });
+    if config.has_insecure_remote_etcd_endpoint() {
+        eprintln!("warning: insecure plaintext etcd was explicitly enabled; use HTTPS for non-loopback etcd");
+    }
     todo!("wiring and tokio setup")
 }
