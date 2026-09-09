@@ -15,7 +15,6 @@
 mod bridge;
 mod discovery;
 mod error;
-mod identity;
 mod inbound;
 mod outbound;
 mod tools;

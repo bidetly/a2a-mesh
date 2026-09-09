@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use crate::identity::Handle;
+use a2a_mesh::identity::Handle;
 
 /// The error type for mesh operations.
 ///

@@ -47,11 +47,14 @@ and discovery is a lookup rather than a protocol.
 
 ### 1.2 Out of scope
 
-**Coordinating two agents working in the same directory.** Working directory
-appears in peer metadata so agents can see the overlap, but this system provides
-no locking, no leases on paths, and no conflict detection. Two agents in one
-tree coordinate that between themselves — possibly by messaging each other
-through this system, which is an ordinary use of it and not a feature of it.
+**Coordinating two agents working in the same directory.** Working directory's
+final path component appears in peer metadata so agents can see likely overlap,
+but only the last path segment is published (not the full path), so two agents
+in differently-rooted directories that happen to share a leaf name can appear to
+overlap when they do not — treat it as a hint, not proof. This system provides
+no locking, no leases on paths, and no conflict detection regardless. Two agents
+in one tree coordinate that between themselves — possibly by messaging each
+other through this system, which is an ordinary use of it and not a feature of it.
 
 ---
 
@@ -172,7 +175,7 @@ announce, with an error saying to call `mesh_announce` first.
       "name": "Docs writer",
       "description": "...",
       "skills": [ { "id": "...", "name": "...", "tags": ["..."] } ],
-      "cwd": "/home/me/src/acme-docs",
+      "cwd": "acme-docs",
       "repo": "git@github.com:acme/docs.git",
       "branch": "main",
       "endpoint": "http://127.0.0.1:53987",
@@ -348,7 +351,7 @@ through re-announcing does not orphan a key.
 | `url` | Bound listener address (§4.3) |
 | `capabilities` | What the node has enabled: `streaming: true`, `pushNotifications: false` |
 | `version` | Incremented on each announce |
-| `metadata.cwd`, `.repo`, `.branch`, `.pid` | Observed from the process environment |
+| `metadata.cwd`, `.hostname`, `.repo`, `.branch`, `.pid` | Observed from the process environment; `cwd` is only the final path component |
 
 `a2a-server-lf` exposes `AgentCardProducer` as a trait, so the card served at
 `/.well-known/agent-card.json` is generated per request from current state.
@@ -391,7 +394,7 @@ cluster. None of these are needed for the loopback default.
 ### 5.2 Keys
 
 ```
-/a2a-mesh/agents/{uuid}   →  { handle, card, endpoint, cwd, repo, branch, pid }
+/a2a-mesh/agents/{uuid}   →  { handle, card, endpoint, cwd, hostname, repo, branch, pid }
 ```
 
 One key per instance. The value is the serialized agent card plus mesh metadata.

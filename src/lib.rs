@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod dto;
+pub mod identity;
 pub mod security;
 
 pub use dto::{

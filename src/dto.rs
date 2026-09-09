@@ -85,12 +85,22 @@ impl<'de> Deserialize<'de> for TransportSecurity {
 }
 
 /// Observed process properties; unavailable observations remain absent.
+///
+/// Deliberately forward-compatible: unlike other DTOs in this module, unknown
+/// fields are accepted rather than rejected, so a newer writer can add an
+/// additive optional probe without breaking an older reader still running
+/// against this same schema version.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ProcessMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
 }
 
@@ -359,9 +369,42 @@ mod tests {
             "endpoint": "https://127.0.0.1:4567",
             "interface": { "protocol": "jsonrpc", "version": "1.0" },
             "registration_version": 4,
-            "process": { "cwd": "/work/project", "repository": null, "branch": "trunk", "pid": 42 },
+            "process": { "cwd": "/work/project", "hostname": "dev-laptop", "repository": "github.com/acme/project", "branch": "trunk", "pid": 42 },
             "security": { "mode": "pinned-tls", "spki_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "certificate_expires_at": "2027-01-01T00:00:00Z" }
         })
+    }
+
+    #[test]
+    fn absent_process_metadata_is_omitted_when_serializing() {
+        let serialized = serde_json::to_value(ProcessMetadata::default()).unwrap();
+        for field in ["cwd", "hostname", "repository", "branch", "pid"] {
+            assert!(serialized.get(field).is_none(), "{field} must be absent");
+        }
+        let explicit_null = serde_json::json!({
+            "cwd": null,
+            "hostname": null,
+            "repository": null,
+            "branch": null,
+            "pid": null
+        });
+        assert_eq!(
+            serde_json::from_value::<ProcessMetadata>(explicit_null).unwrap(),
+            ProcessMetadata::default()
+        );
+    }
+
+    #[test]
+    fn process_metadata_tolerates_unknown_fields_for_forward_compatibility() {
+        let with_future_field = serde_json::json!({
+            "cwd": "project",
+            "hostname": "dev-laptop",
+            "repository": null,
+            "branch": "main",
+            "pid": 42,
+            "container_id": "abcdef123456"
+        });
+        let parsed: ProcessMetadata = serde_json::from_value(with_future_field).unwrap();
+        assert_eq!(parsed.hostname.as_deref(), Some("dev-laptop"));
     }
 
     #[test]

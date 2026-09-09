@@ -13,8 +13,9 @@ Lease-bound registrations use schema version `1`. `instance_id` is the process
 UUID and `handle` is its mesh-visible name. `endpoint` is the advertised peer
 URL. `interface` declares the JSON-RPC protocol and version. The lease-bound,
 monotonically increasing `registration_version` changes when the agent card
-changes. `process` contains nullable observed `cwd`, `repository`, `branch`,
-and `pid` metadata.
+changes. `process` contains nullable observed `cwd`, `hostname`, `repository`,
+`branch`, and `pid` metadata. `cwd` is only the final path component (its
+basename), never a full path.
 
 ```json
 {
@@ -24,7 +25,7 @@ and `pid` metadata.
   "endpoint":"https://127.0.0.1:4567",
   "interface":{"protocol":"jsonrpc","version":"1.0"},
   "registration_version":4,
-  "process":{"cwd":"/work/project","repository":null,"branch":"trunk","pid":42},
+  "process":{"cwd":"project","hostname":"dev-laptop","repository":null,"branch":"trunk","pid":42},
   "security":{"mode":"pinned-tls","spki_sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","certificate_expires_at":"2027-01-01T00:00:00Z"}
 }
 ```
@@ -56,7 +57,7 @@ nullable age in milliseconds.
   "endpoint":"https://127.0.0.1:4567",
   "reachable":false,
   "snapshot":{"health":"stale","revision":91,"last_successful_refresh":"2026-08-21T18:00:00Z","stale_age_ms":3500},
-  "registration":{"schema_version":1,"instance_id":"6f0d9b1b-f4c3-4e5e-9a8d-7f9f559898a4","handle":"planner@laptop","endpoint":"https://127.0.0.1:4567","interface":{"protocol":"jsonrpc","version":"1.0"},"registration_version":4,"process":{"cwd":null,"repository":null,"branch":null,"pid":null},"security":{"mode":"pinned-tls","spki_sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","certificate_expires_at":"2027-01-01T00:00:00Z"}}
+  "registration":{"schema_version":1,"instance_id":"6f0d9b1b-f4c3-4e5e-9a8d-7f9f559898a4","handle":"planner@laptop","endpoint":"https://127.0.0.1:4567","interface":{"protocol":"jsonrpc","version":"1.0"},"registration_version":4,"process":{"cwd":null,"hostname":null,"repository":null,"branch":null,"pid":null},"security":{"mode":"pinned-tls","spki_sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","certificate_expires_at":"2027-01-01T00:00:00Z"}}
 }
 ```
 
